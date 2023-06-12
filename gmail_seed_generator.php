@@ -3,7 +3,7 @@ function generateUniqueIterations($word) {
     $iterations = [];
     $length = strlen($word);
 
-    // Generate all possible combinations
+    // Generate 
     for ($i = 1; $i < $length; $i++) {
         $prefix = substr($word, 0, $i);
         $suffix = substr($word, $i);
@@ -20,7 +20,7 @@ function generateUniqueIterations($word) {
         }
     }
 
-    // Add the original word as an iteration
+    // Add the original word as an iteration, dummy.
     if (!in_array($word, $iterations)) {
         $iterations[] = $word;
     }
@@ -28,7 +28,7 @@ function generateUniqueIterations($word) {
     return $iterations;
 }
 
-// Get user input
+// Enter username
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = $_POST['word'];
 
