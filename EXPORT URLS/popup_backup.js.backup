@@ -1,0 +1,134 @@
+async function getAccounts() {
+  let accounts = await browser.accounts.list();
+  return accounts;
+}
+
+async function getFolders(accountId) {
+  let account = await browser.accounts.get(accountId);
+  return account.folders;
+}
+
+async function extractUrlsFromFolder(folder) {
+  let messages = await browser.messages.list(folder);
+  let urls = [];
+
+  let progressBar = document.getElementById('progress-bar');
+  let totalMessages = messages.messages.length;
+  
+  console.log(`Extracting URLs from folder: ${folder.name}`);
+
+  for (let i = 0; i < totalMessages; i++) {
+    let message = messages.messages[i];
+    console.log(`Processing message ID: ${message.id}`);
+    let fullMessage = await browser.messages.getFull(message.id);
+    console.log(`Full message: `, fullMessage);
+
+    let bodyParts = fullMessage.parts.filter(part => part.contentType === "text/html" || part.contentType === "text/plain");
+
+    for (let part of bodyParts) {
+      let body = part.body;
+
+      if (part.encoding === 'base64') {
+        body = decodeBase64(body);
+      } else if (part.encoding === 'quoted-printable') {
+        body = decodeQuotedPrintable(body);
+      }
+
+      console.log(`Decoded message body: `, body);
+
+      let urlRegex = /https?:\/\/[^\s]+/g;
+      let foundUrls = body.match(urlRegex);
+
+      if (foundUrls) {
+        console.log(`Found URLs: `, foundUrls);
+        urls.push(...foundUrls);
+      } else {
+        console.log(`No URLs found in body part with contentType: ${part.contentType}`);
+      }
+    }
+
+    // Update progress bar
+    let progress = Math.round(((i + 1) / totalMessages) * 100);
+    progressBar.style.width = progress + '%';
+    progressBar.textContent = progress + '%';
+  }
+
+  return urls;
+}
+
+function decodeBase64(input) {
+  return atob(input);
+}
+
+function decodeQuotedPrintable(input) {
+  return input.replace(/=([A-Fa-f0-9]{2})/g, function(match, hex) {
+    return String.fromCharCode(parseInt(hex, 16));
+  }).replace(/=\r?\n/g, '');
+}
+
+function exportToFile(content, filename) {
+  let blob = new Blob([content], { type: 'text/plain' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }, 0);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  let accountList = document.getElementById('accountList');
+  let folderList = document.getElementById('folderList');
+
+  let accounts = await getAccounts();
+  accounts.forEach(account => {
+    let option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = account.name;
+    accountList.appendChild(option);
+  });
+
+  accountList.addEventListener('change', async () => {
+    let selectedAccountId = accountList.value;
+    let folders = await getFolders(selectedAccountId);
+    folderList.innerHTML = '';
+    folders.forEach(folder => {
+      let option = document.createElement('option');
+      option.value = folder.path;
+      option.textContent = folder.name;
+      option.dataset.accountId = selectedAccountId; // Store account ID for later use
+      folderList.appendChild(option);
+    });
+  });
+
+  document.getElementById('extractUrlsButton').addEventListener('click', async () => {
+    let selectedFolderPath = folderList.value;
+    let selectedAccountId = folderList.options[folderList.selectedIndex].dataset.accountId;
+    let folders = await getFolders(selectedAccountId);
+    let folder = folders.find(f => f.path === selectedFolderPath);
+
+    let urls = await extractUrlsFromFolder(folder);
+    document.getElementById('urls').value = urls.join('\n');
+    await browser.storage.local.set({ extractedUrls: urls });
+
+    // Reset progress bar after extraction is complete
+    let progressBar = document.getElementById('progress-bar');
+    progressBar.style.width = '0%';
+    progressBar.textContent = '0%';
+  });
+
+  document.getElementById('exportUrlsButton').addEventListener('click', async () => {
+    let urls = (await browser.storage.local.get('extractedUrls')).extractedUrls;
+    if (urls && urls.length > 0) {
+      let content = urls.join('\n');
+      let filename = 'extracted_urls.txt';
+      exportToFile(content, filename);
+    } else {
+      alert('No URLs to export.');
+    }
+  });
+});
